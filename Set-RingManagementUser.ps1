@@ -14,24 +14,24 @@
 #Early Adopters
 [string]$Ring1UserGroupName = "Sec-MEM-EarlyAdopters-Users"  # Supports nested groups (excluding device objects)
 [string]$PrefixGroupRing1 = "Sec-AutoRunbook-MEMEarlyAdopters-" # Prefix of ring groups
-[int]$NumberOfGroupsRing1 = 2 # Number of groups in this ring which devices will be spread equally on
+[int]$NumberOfGroupsRing1 = 2 # Number of groups in this ring which users will be spread equally on
 
 #Early verification
 [string]$Ring2UserGroupName = "Sec-MEM-EarlyVerification-Users" # Supports nested groups (excluding device objects)
 [string]$PrefixGroupRing2 = "Sec-AutoRunbook-MEMEarlyVerification-"
-[int]$NumberOfGroupsRing2 = 4 # Number of groups in this ring which devices will be spread equally on
+[int]$NumberOfGroupsRing2 = 4 # Number of groups in this ring which users will be spread equally on
 
 #Early production
 [string]$Ring3UserGroupName = "Sec-MEM-EarlyProduction-Users" # Supports nested groups (excluding device objects)
 [string]$PrefixGroupRing3 = "Sec-AutoRunbook-MEMEarlyProduction-"
-[int]$NumberOfGroupsRing3 = 8 # Number of groups in this ring which devices will be spread equally on
+[int]$NumberOfGroupsRing3 = 8 # Number of groups in this ring which users will be spread equally on
 
 #Global production
 [string]$PrefixGroupRing4 = "Sec-AutoRunbook-MEMGlobalProduction-"
-[int]$NumberOfGroupsRing4 = 16 # Number of groups in this ring which devices will be spread equally on
+[int]$NumberOfGroupsRing4 = 16 # Number of groups in this ring which users will be spread equally on
 
 #Global excluded user
-[string]$GroupExcludedUsersName = "Sec-AutoRunbook-MEMDeviceRingsExcluded" # Supports nested groups (excluding device objects)
+[string]$GroupExcludedUsersName = "Sec-AutoRunbook-MEMUserRingsExcluded" # Supports nested groups (excluding device objects)
 
 #Start
 $StartTime = Get-Date
@@ -101,24 +101,7 @@ function Get-AzureADGroup
     #Return reponse
     return [array]$Group.value
 }
-function Get-AzureADUserOwnedDevice 
-{
-    param (
-        [Parameter(Mandatory=$true)]$AuthHeader,
-        [Parameter(Mandatory=$true)]$Id
-    )
-
-    #Create request headers.
-    $Headers = $AuthHeader
-    $Headers["content-type"] = "application/json"
-
-    #Do the call
-    $Devices = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/users/$Id/ownedDevices" -ContentType "application/json"
-
-    #Return reponse
-    return [array]$Devices.value
-}
-function Get-AzureADDevice 
+function Get-AzureADUsers
 {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader
@@ -130,7 +113,7 @@ function Get-AzureADDevice
     $Headers["content-type"] = "application/json"
 
     #Create application in Intune.
-    $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/devices?`$filter=startswith(operatingSystem, 'Windows')" -ContentType "application/json"
+    $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/users" -ContentType "application/json"
 
     #In case the list is longer than 100 items
     while ($Response."@odata.nextLink") {
@@ -372,83 +355,38 @@ catch {
 #region begin main
 ############### Main - Start ###############
 
-#Get all current supported PC types
-[array]$AllSupportedWinDevices = Get-AzureADDevice -AuthHeader $AuthHeader
-
 #Get/Create user groups
 $Ring1UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring1UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 1"
 $Ring2UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring2UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 2"
 $Ring3UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring3UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 3"
+$GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupExcludedUsersName -Description "Do not change the name or description of this group. This group contains users excluded from the rings. Nested groups are supported. User objects will be ignored."
 
-#Get/Create device groups
-$Ring1DeviceGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring1DeviceGroupName -Description "Do not change the name or description of this group. This group contains devices for Ring 1"
-$Ring2DeviceGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring2DeviceGroupName -Description "Do not change the name or description of this group. This group contains devices for Ring 2" 
-$Ring3DeviceGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring3DeviceGroupName -Description "Do not change the name or description of this group. This group contains devices for Ring 3"
-$Ring4DeviceGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring4DeviceGroupName -Description "Do not change the name or description of this group. This group contains devices for Ring 4"
-$GroupExcludedUsers= Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupExcludedUsersName -Description "Do not change the name or description of this group. This group contains devices excluded from the rings. Nested groups are supported. User objects will be ignored."
+#Get all current supported PC types
+[array]$AllExcludedUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $GroupExcludedUsers | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
+[array]$AllSupportedUsers = Get-AzureADUsers -AuthHeader $AuthHeader | Where-Object {($_.Id -notin $AllExcludedUsers.Id)}
 
-#Get devices for device groups, we need to exclude these from the global scope as they need to be enforced to each ring later
-[array]$Ring1GroupDevices = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring1DeviceGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$Ring2GroupDevices = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring2DeviceGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$Ring3GroupDevices = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring3DeviceGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$Ring4GroupDevices = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring4DeviceGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$AllExcludedDevices = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $GroupExcludedUsers | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-
-#Remove the excluded devices from the allsupported win devcices
-[array]$AllSupportedWinDevices = $AllSupportedWinDevices | Where-Object {$_.Id -notin $AllExcludedDevices.Id}
-
-#Define all global group
-[array]$GlobalWinDevices = $AllSupportedWinDevices | Where-Object {($_.Id -notin $Ring1GroupDevices.Id) `
-                                                    -and ($_.Id -notin $Ring2GroupDevices.Id) `
-                                                    -and ($_.Id -notin $Ring3GroupDevices.Id) `
-                                                    -and ($_.Id -notin $Ring4GroupDevices.Id)}
+#Get group users
+[array]$Ring1GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring1UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
+[array]$Ring2GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring2UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
+[array]$Ring3GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring3UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
 
 ################################
-#Running define device groupings
+#Running define user groupings
 ################################
 
-#Allign Ring1 groups with users devices (Primary Devices in Intune)
-[array]$Ring1UserGroupMembers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring1UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-Foreach($User in $Ring1UserGroupMembers){
+#Add the amout of users to each major ring
+[array]$AllRing1Users = $Ring1GroupUsers | Sort-Object -Property Id -Unique
+[array]$AllRing2Users = $Ring2GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id)} | Sort-Object -Property Id -Unique
+[array]$AllRing3Users = $Ring3GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id)} | Sort-Object -Property Id -Unique
+[array]$AllRing4Users= $AllSupportedUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id) -and ($_.Id -notin $AllRing3Users.Id)} | Sort-Object -Property Id -Unique
 
-    #Add all users Primary Devices to an array and ensure they are part of the supported device list
-    [array]$Ring1Devices += (Get-AzureADUserOwnedDevice -AuthHeader $AuthHeader  -Id $User.Id | Where-Object {$_.Id -in $GlobalWinDevices.Id}) 
-}
-
-#Allign Ring2 groups with users devices (Primary Devices in Intune)
-[array]$Ring2UserGroupMembers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring2UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-Foreach($User in $Ring2UserGroupMembers){
-
-    #Add all users Primary Devices to an array and ensure they are part of the supported device list (sort out devices from Ring1 as users can be in more groups)
-    [array]$Ring2Devices += (Get-AzureADUserOwnedDevice -AuthHeader $AuthHeader  -Id $User.Id | Where-Object {($_.Id -in $GlobalWinDevices.Id) -and ($_.Id -notin $Ring1Devices.Id)})
-}
-
-#Allign Ring2 groups with users devices (Primary Devices in Intune)
-[array]$Ring3UserGroupMembers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring3UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-Foreach($User in $Ring3UserGroupMembers){
-
-    #Add all users Primary Devices to an array and ensure they are part of the supported device list (sort out devices from Ring1 and Ring2 as users can be in more groups)
-    [array]$Ring3Devices += (Get-AzureADUserOwnedDevice -AuthHeader $AuthHeader  -Id $User.Id | Where-Object {($_.Id -in $GlobalWinDevices.Id) -and ($_.Id -notin $Ring1Devices.Id) -and ($_.Id -notin $Ring2Devices.Id)})
-}
-
-#Remove all the Primary User based devices from the device pool before defining major groups
-[array]$AllSupportedWinDevicesNoPrimaryDevices = $GlobalWinDevices | Where-Object{($_.Id -notin $Ring1Devices.Id) `
-                                                                                        -and ($_.Id -notin $Ring2Devices.Id) `
-                                                                                        -and ($_.Id -notin $Ring3Devices.Id)} | Sort-Object -Property Id
-
-#Add the amout of devices to each major ring (use unique as one device can have multiple owners)
-[array]$AllRing1Devices = ($Ring1Devices + $Ring1GroupDevices) | Sort-Object -Property Id -Unique
-[array]$AllRing2Devices = ($Ring2Devices + $Ring2GroupDevices) | Where-Object {($_.Id -notin $AllRing1Devices.Id)} | Sort-Object -Property Id -Unique
-[array]$AllRing3Devices = ($Ring3Devices + $Ring3GroupDevices) | Where-Object {($_.Id -notin $AllRing1Devices.Id) -and ($_.Id -notin $AllRing2Devices.Id)} | Sort-Object -Property Id -Unique
-[array]$AllRing4Devices = ($AllSupportedWinDevicesNoPrimaryDevices[0..$AllSupportedWinDevicesNoPrimaryDevices.Count] + $Ring4GroupDevices) | Where-Object {($_.Id -notin $AllRing1Devices.Id) -and ($_.Id -notin $AllRing2Devices.Id) -and ($_.Id -notin $AllRing3Devices.Id)} | Sort-Object -Property Id -Unique
-
-Write-Output "[Rings]::Device statistics:`nRing1: $($AllRing1Devices.Count) ($($Ring1GroupDevices.Count) from $Ring1DeviceGroupName)`nRing2: $($AllRing2Devices.Count) ($($Ring2GroupDevices.Count) from $Ring2DeviceGroupName)`nRing3: $($AllRing3Devices.Count) ($($Ring3GroupDevices.Count) from $Ring3DeviceGroupName)`nRing4: $($AllRing4Devices.Count) ($($Ring4GroupDevices.Count) from $Ring4DeviceGroupName)`nTotal excluded devices: $($AllExcludedDevices.Count)`nTotal included devices: $($AllSupportedWinDevices.Count)"
+Write-Output "[Rings]::User statistics:`nRing1: $($AllRing1Users.Count) ($($Ring1GroupUsers.Count) from $Ring1UserGroupName)`nRing2: $($AllRing2Users.Count) ($($Ring2GroupUsers.Count) from $Ring2UserGroupName)`nRing3: $($AllRing3Users.Count) ($($Ring3GroupUsers.Count) from $Ring3UserGroupName)`nRing4: $($AllRing4Users.Count)`nTotal excluded users: $($AllExcludedUsers.Count)`nTotal included users: $($AllIncludedUsers.Count)"
 
 #Split the objects into the count of groups sorting them (sort on multiple properties in case they where created on the same date/time)
-[array]$Ring1Groupings = Split-Array -InArray ($AllRing1Devices | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing1
-[array]$Ring2Groupings = Split-Array -InArray ($AllRing2Devices | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing2
-[array]$Ring3Groupings = Split-Array -InArray ($AllRing3Devices | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing3
-[array]$Ring4Groupings = Split-Array -InArray ($AllRing4Devices | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing4
+[array]$Ring1Groupings = Split-Array -InArray ($AllRing1Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing1
+[array]$Ring2Groupings = Split-Array -InArray ($AllRing2Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing2
+[array]$Ring3Groupings = Split-Array -InArray ($AllRing3Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing3
+[array]$Ring4Groupings = Split-Array -InArray ($AllRing4Users| Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing4
 
 ################################
 #Running Ring1
