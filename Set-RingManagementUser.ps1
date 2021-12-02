@@ -239,7 +239,7 @@ function Get-AzureADNestedGroupObjects
         }
     }
 
-    #Return the users (in case object belongs to multiple nested groups, get unique)
+    #Return the objects (in case object belongs to multiple nested groups, get unique)
     Return ($Objects | Sort-Object -Property id -Unique)
 }
 function New-AzureADGroup 
