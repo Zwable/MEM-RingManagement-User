@@ -393,7 +393,6 @@ Ring1: $($AllRing1Users.Count) ($($Ring1GroupUsers.Count) from $Ring1UserGroupNa
 Ring2: $($AllRing2Users.Count) ($($Ring2GroupUsers.Count) from $Ring2UserGroupName)
 Ring3: $($AllRing3Users.Count) ($($Ring3GroupUsers.Count) from $Ring3UserGroupName)
 Ring4: $($AllRing4Users.Count)
-`n
 Total excluded users: $($AllExcludedUsers.Count)
 Total included users: $($AllSupportedUsers.Count)
 "@ | Write-Output
