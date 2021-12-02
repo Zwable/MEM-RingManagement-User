@@ -380,13 +380,22 @@ $GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -Displ
 [array]$AllRing3Users = $Ring3GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id)} | Sort-Object -Property Id -Unique
 [array]$AllRing4Users= $AllSupportedUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id) -and ($_.Id -notin $AllRing3Users.Id)} | Sort-Object -Property Id -Unique
 
-Write-Output "[Rings]::User statistics:`nRing1: $($AllRing1Users.Count) ($($Ring1GroupUsers.Count) from $Ring1UserGroupName)`nRing2: $($AllRing2Users.Count) ($($Ring2GroupUsers.Count) from $Ring2UserGroupName)`nRing3: $($AllRing3Users.Count) ($($Ring3GroupUsers.Count) from $Ring3UserGroupName)`nRing4: $($AllRing4Users.Count)`nTotal excluded users: $($AllExcludedUsers.Count)`nTotal included users: $($AllIncludedUsers.Count)"
-
 #Split the objects into the count of groups sorting them (sort on multiple properties in case they where created on the same date/time)
 [array]$Ring1Groupings = Split-Array -InArray ($AllRing1Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing1
 [array]$Ring2Groupings = Split-Array -InArray ($AllRing2Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing2
 [array]$Ring3Groupings = Split-Array -InArray ($AllRing3Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing3
 [array]$Ring4Groupings = Split-Array -InArray ($AllRing4Users| Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing4
+
+#Write statistics output
+@"
+[Rings]::User statistics:
+Ring1: $($AllRing1Users.Count) ($($Ring1GroupUsers.Count) from $Ring1UserGroupName)
+Ring2: $($AllRing2Users.Count) ($($Ring2GroupUsers.Count) from $Ring2UserGroupName)
+Ring3: $($AllRing3Users.Count) ($($Ring3GroupUsers.Count) from $Ring3UserGroupName)
+Ring4: $($AllRing4Users.Count)
+Total excluded users: $($AllExcludedUsers.Count)
+Total included users: $($AllSupportedUsers.Count)
+"@ | Write-Output
 
 ################################
 #Running Ring1
