@@ -6,8 +6,6 @@
 .NOTES
   Version:        1.0
   Author:         Morten Rønborg (mr@zwable.com)
-  Creation Date:  2021-10-13
-  Purpose/Change: 2021-10-13
 #>
 
 #Variables
