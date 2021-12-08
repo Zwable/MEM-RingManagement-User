@@ -375,9 +375,9 @@ $GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -Displ
 ################################
 
 #Add the amout of users to each major ring
-[array]$AllRing1Users = $Ring1GroupUsers | Sort-Object -Property Id -Unique
-[array]$AllRing2Users = $Ring2GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id)} | Sort-Object -Property Id -Unique
-[array]$AllRing3Users = $Ring3GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id)} | Sort-Object -Property Id -Unique
+[array]$AllRing1Users = $Ring1GroupUsers | Where-Object {($_.Id -in $AllSupportedUsers.Id)} |Sort-Object -Property Id -Unique
+[array]$AllRing2Users = $Ring2GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -in $AllSupportedUsers.Id)} | Sort-Object -Property Id -Unique
+[array]$AllRing3Users = $Ring3GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id) -and ($_.Id -in $AllSupportedUsers.Id)} | Sort-Object -Property Id -Unique
 [array]$AllRing4Users= $AllSupportedUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id) -and ($_.Id -notin $AllRing3Users.Id)} | Sort-Object -Property Id -Unique
 
 #Split the objects into the count of groups sorting them (sort on multiple properties in case they where created on the same date/time)
