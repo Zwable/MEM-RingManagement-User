@@ -4,7 +4,7 @@
 .DESCRIPTION
 
 .NOTES
-  Version:        1.0
+  Version:        2.0
   Author:         Morten Rønborg (mr@zwable.com)
 #>
 
@@ -13,33 +13,108 @@
 [string]$Ring1UserGroupName = "Sec-MEM-EarlyAdopters-Users"  # Supports nested groups (excluding device objects)
 [string]$PrefixGroupRing1 = "Sec-AutoRunbook-MEMEarlyAdopters-" # Prefix of ring groups
 [int]$NumberOfGroupsRing1 = 2 # Number of groups in this ring which users will be spread equally on
+[string]$SuffixGroupRing1 = "-Users"
 
 #Early verification
 [string]$Ring2UserGroupName = "Sec-MEM-EarlyVerification-Users" # Supports nested groups (excluding device objects)
 [string]$PrefixGroupRing2 = "Sec-AutoRunbook-MEMEarlyVerification-"
 [int]$NumberOfGroupsRing2 = 4 # Number of groups in this ring which users will be spread equally on
+[string]$SuffixGroupRing2 = "-Users"
 
 #Early production
 [string]$Ring3UserGroupName = "Sec-MEM-EarlyProduction-Users" # Supports nested groups (excluding device objects)
 [string]$PrefixGroupRing3 = "Sec-AutoRunbook-MEMEarlyProduction-"
 [int]$NumberOfGroupsRing3 = 8 # Number of groups in this ring which users will be spread equally on
+[string]$SuffixGroupRing3 = "-Users"
 
 #Global production
 [string]$PrefixGroupRing4 = "Sec-AutoRunbook-MEMGlobalProduction-"
 [int]$NumberOfGroupsRing4 = 16 # Number of groups in this ring which users will be spread equally on
+[string]$SuffixGroupRing4 = "-Users"
 
 #Global excluded user
 [string]$GroupExcludedUsersName = "Sec-AutoRunbook-MEMUserRingsExcluded" # Supports nested groups (excluding device objects)
 
+#Webhook notifictation
+$EnableTeamsNotification = $false
+$JobName = "User Ring Management"
+$PictureBase64 = "data:image/jpeg;base64,<STRINGVALUE>"
+$WebHookUrl = ""
+
 #Start
 $StartTime = Get-Date
 
-################################
-#Variable end
-################################
+#region begin functions
+############### Functions - Start ###############
+function Send-Teams {
+    param (
+        $Title = "Runbook status message",
+        $StatusText = "Ring management",
+        $JobName = "JobName",
+        $JobTitle = "JobTitle",
+        $Ring1Text = "N/A",
+        $Ring2Text = "N/A",
+        $Ring3Text = "N/A",
+        $Ring4Text = "N/A",
+        $ExcludedText = "N/A",
+        $IncludedText = "N/A",
+        $URL,
+        $Image = "None"
+    )
 
-function Split-Array
-{
+    $body = ConvertTo-Json -Depth 4 @{
+        title = $Title
+        text = $StatusText
+        sections = @(
+            @{
+                activityTitle =  $JobName
+                activitySubtitle = $JobTitle
+                activityText = $StatusText
+                activityImage = $Image 
+                
+            },
+            @{
+                title = 'Details'
+                facts = @(
+                    @{
+                    name = 'Ring 1 :'
+                    value = $Ring1Text
+                    },
+                    @{
+                    name = 'Ring 2 :'
+                    value = $Ring2Text
+                    },
+                    @{
+                    name = 'Ring 3 :'
+                    value = $Ring3Text
+                    },
+                    @{
+                    name = 'Ring 4 :'
+                    value = $Ring4Text
+                    },
+                    @{
+                    name = 'Total excluded objects :'
+                    value = $ExcludedText
+                    },
+                    @{
+                    name = 'Total included objects:'
+                    value = $IncludedText
+                    }
+                )
+            }
+        )
+        potentialAction = @(@{
+            '@context' = 'http://schema.org'
+            '@type' = 'ViewAction'
+            name = 'Click here to go to the Azure portal'
+            target = @("https://portal.azure.com")
+        })
+    }
+
+    #Invoke rest method
+    $Response = Invoke-RestMethod -uri $URL -Method Post -body $body -ContentType 'application/json'
+}
+function Split-Array {
     param (
         [array]$InArray,
         [int]$Parts,
@@ -81,8 +156,7 @@ function Split-Array
     #Return output
     Return ,$OutArray
 }
-function Get-AzureADGroup
-{
+function Get-AzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$Search
@@ -99,12 +173,26 @@ function Get-AzureADGroup
     #Return reponse
     return [array]$Group.value
 }
-function Get-AzureADUsers
-{
+function Get-AzureADUserOwnedDevice {
+    param (
+        [Parameter(Mandatory=$true)]$AuthHeader,
+        [Parameter(Mandatory=$true)]$Id
+    )
+
+    #Create request headers.
+    $Headers = $AuthHeader
+    $Headers["content-type"] = "application/json"
+
+    #Do the call
+    $Devices = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/users/$Id/ownedDevices" -ContentType "application/json"
+
+    #Return reponse
+    return [array]$Devices.value
+}
+function Get-AzureADUsers {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader
     )
-
 
     #Create request headers.
     $Headers = $AuthHeader
@@ -126,10 +214,8 @@ function Get-AzureADUsers
 
     #Return reponse
     return [array]$Members
-
 }
-function Add-AzureADGroupMember 
-{
+function Add-AzureADGroupMember {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$GroupID,
@@ -162,8 +248,7 @@ function Add-AzureADGroupMember
         $Response = Invoke-RestMethod -Method Patch -Headers $Headers -Body $json -Uri "https://graph.microsoft.com/beta/groups/$GroupID" -ContentType "application/json"
     }
 }
-function Remove-AzureADGroupMember 
-{
+function Remove-AzureADGroupMember {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$GroupID,
@@ -177,8 +262,7 @@ function Remove-AzureADGroupMember
     #Do the call
     $Response = Invoke-RestMethod -Method Delete -Headers $Headers -Uri "https://graph.microsoft.com/beta/groups/$GroupID/members/$MemberID/`$ref" -ContentType "application/json"
 }
-function Get-AzureADGroupMembers 
-{
+function Get-AzureADGroupMembers {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$GroupID
@@ -187,6 +271,7 @@ function Get-AzureADGroupMembers
     #Create request headers.
     $Headers = $AuthHeader
     $Headers["content-type"] = "application/json"
+    $Members = @()
 
     #Do the call
     $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/groups/$GroupID/members?`$select=id,displayName,description" -ContentType "application/json"
@@ -194,18 +279,38 @@ function Get-AzureADGroupMembers
     #In case the list is longer than 100 items
     while ($Response."@odata.nextLink") {
         
-        #Add members and do call
-        $Members += $Response.value
+        foreach ($ValueObject in $Response.value) {
+
+            #Add members and do call
+            $Obj = [PSCustomObject]@{
+                '@odata.type' = $ValueObject."@odata.type"
+                id = $ValueObject.Id
+                displayName =  $ValueObject.displayName
+                groupId =  $GroupID
+            }
+            $Members += $Obj
+        }
+
         $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri $Response."@odata.nextLink" -ContentType "application/json"
     }
 
-    $Members += $Response.value
+    #Add members
+    foreach ($ValueObject in $Response.value) {
+
+        #Add members and do call
+        $Obj = [PSCustomObject]@{
+            '@odata.type' = $ValueObject."@odata.type"
+            id = $ValueObject.Id
+            displayName =  $ValueObject.displayName
+            groupId =  $GroupID
+        }
+        $Members += $Obj
+    }
 
     #Return reponse
     return [array]$Members
 }
-function Get-AzureADNestedGroupObjects
-{
+function Get-AzureADNestedGroupObjects {
     Param
     (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -237,11 +342,10 @@ function Get-AzureADNestedGroupObjects
         }
     }
 
-    #Return the objects (in case object belongs to multiple nested groups, get unique)
+    #Return the users (in case object belongs to multiple nested groups, get unique)
     Return ($Objects | Sort-Object -Property id -Unique)
 }
-function New-AzureADGroup 
-{
+function New-AzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$DisplayName,
@@ -268,8 +372,7 @@ function New-AzureADGroup
     #Return object
     return $Response
 }
-function Get-CreateOrGetAzureADGroup
-{
+function Get-CreateOrGetAzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$DisplayName,
@@ -285,52 +388,100 @@ function Get-CreateOrGetAzureADGroup
         #Create the group
         Write-Output ("[Get-CreateOrGetAzureADGroup]::The group '{0}' does not exist. Creating it..." -f $DisplayName)
         $Group = New-AzureADGroup -AuthHeader $AuthHeader -DisplayName $DisplayName -Description $Description
+        
+        #Add a timeout for  the API to do changes in the Graph database, otherwise adding members will not work in some cases as the
+        #group object is still not present in the backend for the add group members function
+        Start-Sleep 30
     }
     
     #Return group
     return $Group
 }
-function Set-AllignGroupMemberships 
-{
+function Invoke-RingGroupsMembershipAlligment {
     param (
-        [Parameter(Mandatory=$true)]$AuthHeader,
-        [Parameter(Mandatory=$true)]$GroupObj,
-        [Parameter(Mandatory=$false)][array]$AADObjectIDs
+        $GroupPrefix,
+        $GrpoupSuffix,
+        $NumberOfGroups,
+        $GroupMembers,
+        $AuthHeader
     )
 
-    #State amount to 
-    Write-Output "[Set-AllignGroupMemberships:$($GroupObj.DisplayName)]::Expected objects in group: $($AADObjectIDs.Count)"
+    #Write output
+    Write-Output "[Invoke-RingGroupsMembershipAlligment]::Starting ring memebership alligment..."
+    
+    #Get all members of all ring subgroups
+    for ($i = 0; $i -lt $NumberOfGroups; $i++) {
 
-    #Get current members of the group
-    [array]$CurrentMembersIDs = (Get-AzureADGroupMembers -AuthHeader $AuthHeader -GroupID $GroupObj.id).id
-    Write-Output "[Set-AllignGroupMemberships:$($GroupObj.DisplayName)]::Current objects in group: $($CurrentMembersIDs.Count)"
+        #Define variables
+        [string]$GroupName = ($GroupPrefix + ($i + 1).ToString().PadLeft(4,"0") + $GrpoupSuffix)
+        $Group = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupName -Description "Do not change the name or description of this group. This group is maintained by a runbook"
+        [array]$AllGroups += $Group
 
-    #Declare variables
-    [array]$ObjectsIDsToRemove = $CurrentMembersIDs | Where-Object{$_ -notin $AADObjectIDs}
-    [array]$ObjectsIDsToAdd =  $AADObjectIDs | Where-Object {$_ -notin $CurrentMembersIDs}
+        #Write output
+        Write-Output "[Invoke-RingGroupsMembershipAlligment]::Fetching members of the group '$GroupName'"
 
-    #Write host
-    Write-Output "[Set-AllignGroupMemberships:$($GroupObj.DisplayName)]::Objects to add: $($ObjectsIDsToAdd.Count)"
-    Write-Output "[Set-AllignGroupMemberships:$($GroupObj.DisplayName)]::Objects to remove: $($ObjectsIDsToRemove.Count)"
-
-    #Removing objects (removing supports only one object per API call 2021-10-13)
-    Foreach($ObjectID in $ObjectsIDsToRemove){
-        
-        #Remove member
-        Remove-AzureADGroupMember -AuthHeader $AuthHeader -GroupID $GroupObj.id -MemberId $ObjectID
+        #Get all members of the groups
+        [array]$CurrentRingMembers += (Get-AzureADGroupMembers -AuthHeader $AuthHeader -GroupID $Group.id)
     }
 
-    #Add objects (adding allows to add in bulks 2021-10-13)
-    Add-AzureADGroupMember -AuthHeader $AuthHeader -GroupID $GroupObj.id -MemberId $ObjectsIDsToAdd
+    #Remove the members that is not supposed to be there
+    [array]$MembersToRemove = $CurrentRingMembers | Where-Object{$_.Id -notin $GroupMembers.Id}
+    foreach ($Member in $MembersToRemove) {
+        
+        #Remove member
+        Write-Output "[Invoke-RingGroupsMembershipAlligment]::Removing member '$($Member.id)' from the group '$($Member.groupId)'"
+        Remove-AzureADGroupMember -AuthHeader $AuthHeader -GroupID $Member.groupId -MemberId $Member.id
+        $CurrentRingMembers = $CurrentRingMembers | Where-Object{$_.id -notin $Member.id}
+    }
+
+    #Define members to add, how many in each group
+    [array]$AllMembersToAdd = $GroupMembers | Where-Object{$_.Id -notin $CurrentRingMembers.Id}
+    $MaxGroupMemberships = [Math]::Ceiling(($AllMembersToAdd.Count + $CurrentRingMembers.Count) / $NumberOfGroups)
+    $CurrentRingMembersGrouped = $CurrentRingMembers | Group-Object -Property groupId | Sort-Object -Property Count
+    
+    #Write output
+    Write-Output "[Invoke-RingGroupsMembershipAlligment]::Maximum group members in each sub group in this ring '$($MaxGroupMemberships)'"
+    Write-Output "[Invoke-RingGroupsMembershipAlligment]::Total group members in this ring '$($CurrentRingMembers.count)'"
+    Write-Output "[Invoke-RingGroupsMembershipAlligment]::Total group members to add in this ring '$($AllMembersToAdd.count)'"
+
+    #First go through all empty groups
+    foreach ($Group in ($AllGroups | Where-Object {$_.id -notin $CurrentRingMembers.groupId})) {
+        
+        if($AllMembersToAdd.Count -gt 0){
+            #Define variables
+            $MembersToAdd = $AllMembersToAdd[0..($MaxGroupMemberships - 1)]
+
+            #Add objects (adding allows to add in bulks 2021-10-13)
+            Write-Output "[Invoke-RingGroupsMembershipAlligment]::Adding '$($MembersToAdd.count)' objects to the group '$($Group.displayName)'"
+            Add-AzureADGroupMember -AuthHeader $AuthHeader -GroupID $Group.id -MemberId $MembersToAdd.Id
+
+            #Remove from objects to add
+            $AllMembersToAdd = $AllMembersToAdd | Where-Object{$_.id -notin $MembersToAdd.id}
+        }
+    }
+
+    #Go through existing groups
+    foreach ($Group in $CurrentRingMembersGrouped) {
+        
+        if($AllMembersToAdd.Count -gt 0){
+
+            #Define variables
+            $NeededMembersInGroup = ($MaxGroupMemberships - $Group.Count)
+            $MembersToAdd = $AllMembersToAdd[0..($NeededMembersInGroup - 1)]
+            Write-Output "[Invoke-RingGroupsMembershipAlligment]::Adding '$($MembersToAdd.count)' objects to the group '$($Group.Name)'"
+
+            #Add objects (adding allows to add in bulks 2021-10-13)
+            Add-AzureADGroupMember -AuthHeader $AuthHeader -GroupID $Group.Name -MemberId $MembersToAdd.Id
+
+            #Remove from objects to add
+            $AllMembersToAdd = $AllMembersToAdd | Where-Object{$_.id -notin $MembersToAdd.id}
+        }
+    }
 }
-################################
-#Functions start
-################################
-
-################################
-#Functions end
-################################
-
+############### Functions - End ###############
+#endregion
+#region begin main
+############### Main - Start ###############
 try {
 
     #Obtain AccessToken for Microsoft Graph via the managed identity
@@ -347,11 +498,11 @@ try {
 catch {
 
     #Exit
+    if($EnableTeamsNotification){
+        Send-Teams -JobName $JobName -JobTitle "Failed" -StatusText ("Execution failed with: {0}" -f $_) -URL $WebHookUrl -Image $PictureBase64
+    }
     Throw $_
 }
-
-#region begin main
-############### Main - Start ###############
 
 #Get/Create user groups
 $Ring1UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring1UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 1"
@@ -361,7 +512,18 @@ $GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -Displ
 
 #Get all current supported PC types
 [array]$AllExcludedUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $GroupExcludedUsers | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$AllSupportedUsers = Get-AzureADUsers -AuthHeader $AuthHeader | Where-Object {($_.Id -notin $AllExcludedUsers.Id)}
+try {
+    [array]$AllSupportedUsers = Get-AzureADUsers -AuthHeader $AuthHeader | Where-Object {($_.Id -notin $AllExcludedUsers.Id)}
+}
+catch {
+
+    #Exit
+    if($EnableTeamsNotification){
+        Send-Teams -JobName $JobName -JobTitle "Failed" -StatusText ("Execution failed with: {0}" -f $_) -URL $WebHookUrl -Image $PictureBase64
+    }
+    Throw $_
+}
+
 
 #Get group users
 [array]$Ring1GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring1UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
@@ -378,89 +540,32 @@ $GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -Displ
 [array]$AllRing3Users = $Ring3GroupUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id) -and ($_.Id -in $AllSupportedUsers.Id)} | Sort-Object -Property Id -Unique
 [array]$AllRing4Users= $AllSupportedUsers | Where-Object {($_.Id -notin $AllRing1Users.Id) -and ($_.Id -notin $AllRing2Users.Id) -and ($_.Id -notin $AllRing3Users.Id)} | Sort-Object -Property Id -Unique
 
-#Split the objects into the count of groups sorting them (sort on multiple properties in case they where created on the same date/time)
-[array]$Ring1Groupings = Split-Array -InArray ($AllRing1Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing1
-[array]$Ring2Groupings = Split-Array -InArray ($AllRing2Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing2
-[array]$Ring3Groupings = Split-Array -InArray ($AllRing3Users | Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing3
-[array]$Ring4Groupings = Split-Array -InArray ($AllRing4Users| Sort-Object -Property createdDateTime,displayName) -Parts $NumberOfGroupsRing4
-
-#Write statistics output
+#Write statistics to output
+$Ring1Text = "$($AllRing1Users.Count) ($($Ring1GroupUsers.Count) from $Ring1UserGroupName)"
+$Ring2Text = "$($AllRing2Users.Count) ($($Ring2GroupUsers.Count) from $Ring2UserGroupName)"
+$Ring3Text = "$($AllRing3Users.Count) ($($Ring3GroupUsers.Count) from $Ring3UserGroupName)"
+$Ring4Text = "$($AllRing4Users.Count)"
 @"
 [Rings]::User statistics:
-Ring1: $($AllRing1Users.Count) ($($Ring1GroupUsers.Count) from $Ring1UserGroupName)
-Ring2: $($AllRing2Users.Count) ($($Ring2GroupUsers.Count) from $Ring2UserGroupName)
-Ring3: $($AllRing3Users.Count) ($($Ring3GroupUsers.Count) from $Ring3UserGroupName)
-Ring4: $($AllRing4Users.Count)
+Ring1: $Ring1Text
+Ring2: $Ring2Text
+Ring3: $Ring3Text
+Ring4: $Ring4Text
 Total excluded users: $($AllExcludedUsers.Count)
 Total included users: $($AllSupportedUsers.Count)
 "@ | Write-Output
 
-################################
-#Running Ring1
-################################
-
-for ($i = 0; $i -lt $NumberOfGroupsRing1; $i++) {
-
-    #Define variables
-    [array]$GroupMemberIDs = ($Ring1Groupings[$i]).Id
-    [string]$GroupName = ($PrefixGroupRing1 + ($i + 1).ToString().PadLeft(4,"0") + "-Users")
-    $Group = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupName -Description "Do not change the name or description of this group. This group is maintained by a runbook"
-
-    #Allign memberships
-    Write-Output "[Ring1]::Alligning members of the group '$($Group.DisplayName)' with the ID of '$($Group.Id)'"
-    Set-AllignGroupMemberships -AuthHeader $AuthHeader -Group $Group -AADObjectIDs $GroupMemberIDs
-}
-
-################################
-#Running Ring2
-################################
-
-for ($i = 0; $i -lt $NumberOfGroupsRing2; $i++) {
-    
-    #Define variables
-    [array]$GroupMemberIDs = ($Ring2Groupings[$i]).Id
-    [string]$GroupName = ($PrefixGroupRing2 + ($i + 1).ToString().PadLeft(4,"0") + "-Users")
-    $Group = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupName -Description "Do not change the name or description of this group. This group is maintained by a runbook"
-
-    #Allign memberships
-    Write-Output "[Ring2]::Alligning members of the group '$($Group.DisplayName)' with the ID of '$($Group.Id)'"
-    Set-AllignGroupMemberships -AuthHeader $AuthHeader -Group $Group -AADObjectIDs $GroupMemberIDs
-}
-
-################################
-#Running Ring3
-################################
-
-for ($i = 0; $i -lt $NumberOfGroupsRing3; $i++) {
-    
-    #Define variables
-    [array]$GroupMemberIDs = ($Ring3Groupings[$i]).Id
-    [string]$GroupName = ($PrefixGroupRing3 + ($i + 1).ToString().PadLeft(4,"0") + "-Users")
-    $Group = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupName -Description "Do not change the name or description of this group. This group is maintained by a runbook"
-
-    #Allign memberships
-    Write-Output "[Ring3]::Alligning members of the group '$($Group.DisplayName)' with the ID of '$($Group.Id)'"
-    Set-AllignGroupMemberships -AuthHeader $AuthHeader -Group $Group -AADObjectIDs $GroupMemberIDs
-}
-
-################################
-#Running Ring4
-################################
-
-for ($i = 0; $i -lt $NumberOfGroupsRing4; $i++) {
-    
-    #Define variables
-    [array]$GroupMemberIDs = ($Ring4Groupings[$i]).Id
-    [string]$GroupName = ($PrefixGroupRing4 + ($i + 1).ToString().PadLeft(4,"0") + "-Users")
-    $Group = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupName -Description "Do not change the name or description of this group. This group is maintained by a runbook"
-
-    #Allign memberships
-    Write-Output "[Ring4]::Alligning members of the group '$($Group.DisplayName)' with the ID of '$($Group.Id)'"
-    Set-AllignGroupMemberships -AuthHeader $AuthHeader -Group $Group -AADObjectIDs $GroupMemberIDs
-}
-
-############### Main - End ###############
-#endregion
+#Invoke alligment
+Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing1 -GrpoupSuffix $SuffixGroupRing1 -NumberOfGroups $NumberOfGroupsRing1 -GroupMembers $AllRing1Users -AuthHeader $AuthHeader 
+Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing2 -GrpoupSuffix $SuffixGroupRing2 -NumberOfGroups $NumberOfGroupsRing2 -GroupMembers $AllRing2Users -AuthHeader $AuthHeader 
+Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing3 -GrpoupSuffix $SuffixGroupRing3 -NumberOfGroups $NumberOfGroupsRing3 -GroupMembers $AllRing3Users -AuthHeader $AuthHeader 
+Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing4 -GrpoupSuffix $SuffixGroupRing4 -NumberOfGroups $NumberOfGroupsRing4 -GroupMembers $AllRing4Users -AuthHeader $AuthHeader 
 
 #Completion
-Write-Output ("Script completed in {0}" -f (New-TimeSpan -Start $StartTime -End (Get-Date)).ToString("dd' days 'hh' hours 'mm' minutes 'ss' seconds'"))
+$CompletionText = ("Script completed in {0}" -f (New-TimeSpan -Start $StartTime -End (Get-Date)).ToString("dd' days 'hh' hours 'mm' minutes 'ss' seconds'"))
+Write-Output $CompletionText
+if ($EnableTeamsNotification) {
+    Send-Teams -JobName $JobName -JobTitle "Completed" -StatusText $CompletionText -Ring1Text $Ring1Text -Ring2Text $Ring2Text -Ring3Text $Ring3Text -Ring4Text $Ring4Text -ExcludedText $($AllExcludedUsers.Count) -IncludedText $($AllSupportedUsers.Count) -URL $WebHookUrl -Image $PictureBase64
+}
+############### Main - End ###############
+#endregion
