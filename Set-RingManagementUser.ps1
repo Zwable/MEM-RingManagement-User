@@ -5,7 +5,7 @@
 
 .NOTES
   Version:        2.0
-  Author:         Morten Rønborg (mr@zwable.com)
+  Author:         Morten Rønborg (mr@endpointadmin.com)
 #>
 
 #Variables
