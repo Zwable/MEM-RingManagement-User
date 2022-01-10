@@ -10,26 +10,26 @@
 
 #Variables
 #Early Adopters
-[string]$Ring1UserGroupName = "Sec-MEM-EarlyAdopters-Users"  # Supports nested groups (excluding device objects)
-[string]$PrefixGroupRing1 = "Sec-AutoRunbook-MEMEarlyAdopters-" # Prefix of ring groups
+[string]$Ring1UserGroupName = "Sec-MEM-Ring1-Users"  # Supports nested groups (excluding device objects)
+[string]$PrefixGroupRing1 = "Sec-MEM-Rollout-Ring1-" # Prefix of ring groups
 [int]$NumberOfGroupsRing1 = 2 # Number of groups in this ring which users will be spread equally on
 [string]$SuffixGroupRing1 = "-Users"
 
 #Early verification
-[string]$Ring2UserGroupName = "Sec-MEM-EarlyVerification-Users" # Supports nested groups (excluding device objects)
-[string]$PrefixGroupRing2 = "Sec-AutoRunbook-MEMEarlyVerification-"
+[string]$Ring2UserGroupName = "Sec-MEM-Ring2-Users" # Supports nested groups (excluding device objects)
+[string]$PrefixGroupRing2 = "Sec-MEM-Rollout-Ring2-"
 [int]$NumberOfGroupsRing2 = 4 # Number of groups in this ring which users will be spread equally on
 [string]$SuffixGroupRing2 = "-Users"
 
 #Early production
-[string]$Ring3UserGroupName = "Sec-MEM-EarlyProduction-Users" # Supports nested groups (excluding device objects)
-[string]$PrefixGroupRing3 = "Sec-AutoRunbook-MEMEarlyProduction-"
-[int]$NumberOfGroupsRing3 = 8 # Number of groups in this ring which users will be spread equally on
+[string]$Ring3UserGroupName = "Sec-MEM-Ring3-Users" # Supports nested groups (excluding device objects)
+[string]$PrefixGroupRing3 = "Sec-MEM-Rollout-Ring3-"
+[int]$NumberOfGroupsRing3 = 4 # Number of groups in this ring which users will be spread equally on
 [string]$SuffixGroupRing3 = "-Users"
 
 #Global production
-[string]$PrefixGroupRing4 = "Sec-AutoRunbook-MEMGlobalProduction-"
-[int]$NumberOfGroupsRing4 = 16 # Number of groups in this ring which users will be spread equally on
+[string]$PrefixGroupRing4 = "Sec-MEM-Rollout-Ring4-"
+[int]$NumberOfGroupsRing4 = 8 # Number of groups in this ring which users will be spread equally on
 [string]$SuffixGroupRing4 = "-Users"
 
 #Global excluded user
@@ -159,7 +159,8 @@ function Split-Array {
 function Get-AzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
-        [Parameter(Mandatory=$true)]$Search
+        [Parameter(Mandatory=$true)]$Search,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta   
     )
 
     #Create request headers.
@@ -168,7 +169,7 @@ function Get-AzureADGroup {
     $Headers["content-type"] = "application/json"
 
     #Do the call
-    $Group = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/groups?`$search=$Search" -ContentType "application/json"
+    $Group = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/$APIVersion/groups?`$search=$Search" -ContentType "application/json"
 
     #Return reponse
     return [array]$Group.value
@@ -176,7 +177,8 @@ function Get-AzureADGroup {
 function Get-AzureADUserOwnedDevice {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
-        [Parameter(Mandatory=$true)]$Id
+        [Parameter(Mandatory=$true)]$Id,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta   
     )
 
     #Create request headers.
@@ -184,14 +186,15 @@ function Get-AzureADUserOwnedDevice {
     $Headers["content-type"] = "application/json"
 
     #Do the call
-    $Devices = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/users/$Id/ownedDevices" -ContentType "application/json"
+    $Devices = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/$APIVersion/users/$Id/ownedDevices" -ContentType "application/json"
 
     #Return reponse
     return [array]$Devices.value
 }
 function Get-AzureADUsers {
     param (
-        [Parameter(Mandatory=$true)]$AuthHeader
+        [Parameter(Mandatory=$true)]$AuthHeader,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta
     )
 
     #Create request headers.
@@ -199,7 +202,7 @@ function Get-AzureADUsers {
     $Headers["content-type"] = "application/json"
 
     #Create application in Intune.
-    $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/users" -ContentType "application/json"
+    $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/$APIVersion/users" -ContentType "application/json"
 
     #In case the list is longer than 100 items
     while ($Response."@odata.nextLink") {
@@ -219,7 +222,8 @@ function Add-AzureADGroupMember {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$GroupID,
-        [Parameter(Mandatory=$false)]$MemberID
+        [Parameter(Mandatory=$false)]$MemberID,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta
     )
 
     #Create request headers.
@@ -238,21 +242,22 @@ function Add-AzureADGroupMember {
 
         #Add each ID
         foreach($id in $MemberGroup){
-            $Body['members@odata.bind'] += "https://graph.microsoft.com/beta/directoryObjects/$id"
+            $Body['members@odata.bind'] += "https://graph.microsoft.com/$APIVersion/directoryObjects/$id"
         }
 
         #Convert body to JSON
         $Json = $Body | ConvertTo-Json
 
         #Do the call
-        $Response = Invoke-RestMethod -Method Patch -Headers $Headers -Body $json -Uri "https://graph.microsoft.com/beta/groups/$GroupID" -ContentType "application/json"
+        $Response = Invoke-RestMethod -Method Patch -Headers $Headers -Body $json -Uri "https://graph.microsoft.com/$APIVersion/groups/$GroupID" -ContentType "application/json"
     }
 }
 function Remove-AzureADGroupMember {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$GroupID,
-        [Parameter(Mandatory=$true)]$MemberID
+        [Parameter(Mandatory=$true)]$MemberID,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta
     )
 
     #Create request headers
@@ -260,12 +265,13 @@ function Remove-AzureADGroupMember {
     $Headers["content-type"] = "application/json"
 
     #Do the call
-    $Response = Invoke-RestMethod -Method Delete -Headers $Headers -Uri "https://graph.microsoft.com/beta/groups/$GroupID/members/$MemberID/`$ref" -ContentType "application/json"
+    $Response = Invoke-RestMethod -Method Delete -Headers $Headers -Uri "https://graph.microsoft.com/$APIVersion/groups/$GroupID/members/$MemberID/`$ref" -ContentType "application/json"
 }
 function Get-AzureADGroupMembers {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
-        [Parameter(Mandatory=$true)]$GroupID
+        [Parameter(Mandatory=$true)]$GroupID,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta
     )
 
     #Create request headers.
@@ -274,7 +280,7 @@ function Get-AzureADGroupMembers {
     $Members = @()
 
     #Do the call
-    $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/beta/groups/$GroupID/members?`$select=id,displayName,description" -ContentType "application/json"
+    $Response = Invoke-RestMethod -Method Get -Headers $Headers -Uri "https://graph.microsoft.com/$APIVersion/groups/$GroupID/members?`$select=id,displayName,description" -ContentType "application/json"
 
     #In case the list is longer than 100 items
     while ($Response."@odata.nextLink") {
@@ -349,8 +355,8 @@ function New-AzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
         [Parameter(Mandatory=$true)]$DisplayName,
-        [Parameter(Mandatory=$true)]$Description
-
+        [Parameter(Mandatory=$true)]$Description,
+        [Parameter(Mandatory=$false)]$APIVersion = "v1.0" # v1.0 or beta
     )
     
     #Graph connection strings.
@@ -367,7 +373,7 @@ function New-AzureADGroup {
     $Headers["content-type"] = "application/json"
 
     #Create group
-    $Response = Invoke-RestMethod -Method Post -Headers $Headers -Body $Body -Uri "https://graph.microsoft.com/beta/groups" -ContentType "application/json"
+    $Response = Invoke-RestMethod -Method Post -Headers $Headers -Body $Body -Uri "https://graph.microsoft.com/$APIVersion/groups" -ContentType "application/json"
 
     #Return object
     return $Response
