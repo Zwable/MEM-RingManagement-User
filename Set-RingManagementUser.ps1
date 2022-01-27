@@ -156,6 +156,7 @@ function Split-Array {
     #Return output
     Return ,$OutArray
 }
+#get azure ad group from graph
 function Get-AzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -174,6 +175,7 @@ function Get-AzureADGroup {
     #Return reponse
     return [array]$Group.value
 }
+#get azure ad user owned device from graph
 function Get-AzureADUserOwnedDevice {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -191,6 +193,7 @@ function Get-AzureADUserOwnedDevice {
     #Return reponse
     return [array]$Devices.value
 }
+#get azure ad users from graph
 function Get-AzureADUsers {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -218,6 +221,7 @@ function Get-AzureADUsers {
     #Return reponse
     return [array]$Members
 }
+#add azure ad group member
 function Add-AzureADGroupMember {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -252,6 +256,7 @@ function Add-AzureADGroupMember {
         $Response = Invoke-RestMethod -Method Patch -Headers $Headers -Body $json -Uri "https://graph.microsoft.com/$APIVersion/groups/$GroupID" -ContentType "application/json"
     }
 }
+#remove azure ad group member
 function Remove-AzureADGroupMember {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -267,6 +272,7 @@ function Remove-AzureADGroupMember {
     #Do the call
     $Response = Invoke-RestMethod -Method Delete -Headers $Headers -Uri "https://graph.microsoft.com/$APIVersion/groups/$GroupID/members/$MemberID/`$ref" -ContentType "application/json"
 }
+#get azure ad group members
 function Get-AzureADGroupMembers {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -316,6 +322,7 @@ function Get-AzureADGroupMembers {
     #Return reponse
     return [array]$Members
 }
+#get azure ad group members in nested groups
 function Get-AzureADNestedGroupObjects {
     Param
     (
@@ -351,6 +358,7 @@ function Get-AzureADNestedGroupObjects {
     #Return the users (in case object belongs to multiple nested groups, get unique)
     Return ($Objects | Sort-Object -Property id -Unique)
 }
+#create new azure ad groups
 function New-AzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -378,6 +386,7 @@ function New-AzureADGroup {
     #Return object
     return $Response
 }
+#get or create azure ad group
 function Get-CreateOrGetAzureADGroup {
     param (
         [Parameter(Mandatory=$true)]$AuthHeader,
@@ -403,6 +412,7 @@ function Get-CreateOrGetAzureADGroup {
     #Return group
     return $Group
 }
+#invoke alligment
 function Invoke-RingGroupsMembershipAlligment {
     param (
         $GroupPrefix,
@@ -509,17 +519,22 @@ catch {
     }
     Throw $_
 }
-
-#Get/Create user groups
-$Ring1UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring1UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 1"
-$Ring2UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring2UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 2"
-$Ring3UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring3UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 3"
-$GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupExcludedUsersName -Description "Do not change the name or description of this group. This group contains users excluded from the rings. Nested groups are supported. User objects will be ignored."
-
-#Get all current supported PC types
-[array]$AllExcludedUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $GroupExcludedUsers | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
 try {
+
+    #Get/Create user groups
+    $Ring1UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring1UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 1"
+    $Ring2UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring2UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 2"
+    $Ring3UserGroup = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $Ring3UserGroupName -Description "Do not change the name or description of this group. This group contains users for Ring 3"
+    $GroupExcludedUsers = Get-CreateOrGetAzureADGroup -AuthHeader $AuthHeader -DisplayName $GroupExcludedUsersName -Description "Do not change the name or description of this group. This group contains users excluded from the rings. Nested groups are supported. User objects will be ignored."
+
+    #Get all users
+    [array]$AllExcludedUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $GroupExcludedUsers | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
     [array]$AllSupportedUsers = Get-AzureADUsers -AuthHeader $AuthHeader | Where-Object {($_.Id -notin $AllExcludedUsers.Id)}
+
+    #Get group users
+    [array]$Ring1GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring1UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
+    [array]$Ring2GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring2UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
+    [array]$Ring3GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring3UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
 }
 catch {
 
@@ -530,11 +545,6 @@ catch {
     Throw $_
 }
 
-
-#Get group users
-[array]$Ring1GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring1UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$Ring2GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring2UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
-[array]$Ring3GroupUsers = Get-AzureADNestedGroupObjects -AuthHeader $AuthHeader -GroupObj $Ring3UserGroup | Where-Object {$_."@odata.type" -eq "#microsoft.graph.user"}
 
 ################################
 #Running define user groupings
@@ -561,11 +571,22 @@ Total excluded users: $($AllExcludedUsers.Count)
 Total included users: $($AllSupportedUsers.Count)
 "@ | Write-Output
 
-#Invoke alligment
-Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing1 -GrpoupSuffix $SuffixGroupRing1 -NumberOfGroups $NumberOfGroupsRing1 -GroupMembers $AllRing1Users -AuthHeader $AuthHeader 
-Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing2 -GrpoupSuffix $SuffixGroupRing2 -NumberOfGroups $NumberOfGroupsRing2 -GroupMembers $AllRing2Users -AuthHeader $AuthHeader 
-Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing3 -GrpoupSuffix $SuffixGroupRing3 -NumberOfGroups $NumberOfGroupsRing3 -GroupMembers $AllRing3Users -AuthHeader $AuthHeader 
-Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing4 -GrpoupSuffix $SuffixGroupRing4 -NumberOfGroups $NumberOfGroupsRing4 -GroupMembers $AllRing4Users -AuthHeader $AuthHeader 
+try {
+
+    #Invoke alligment
+    Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing1 -GrpoupSuffix $SuffixGroupRing1 -NumberOfGroups $NumberOfGroupsRing1 -GroupMembers $AllRing1Users -AuthHeader $AuthHeader 
+    Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing2 -GrpoupSuffix $SuffixGroupRing2 -NumberOfGroups $NumberOfGroupsRing2 -GroupMembers $AllRing2Users -AuthHeader $AuthHeader 
+    Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing3 -GrpoupSuffix $SuffixGroupRing3 -NumberOfGroups $NumberOfGroupsRing3 -GroupMembers $AllRing3Users -AuthHeader $AuthHeader 
+    Invoke-RingGroupsMembershipAlligment -GroupPrefix $PrefixGroupRing4 -GrpoupSuffix $SuffixGroupRing4 -NumberOfGroups $NumberOfGroupsRing4 -GroupMembers $AllRing4Users -AuthHeader $AuthHeader 
+}
+catch {
+
+    #Exit
+    if($EnableTeamsNotification){
+        Send-Teams -JobName $JobName -JobTitle "Failed" -StatusText ("Execution failed with: {0}" -f $_) -URL $WebHookUrl -Image $PictureBase64
+    }
+    Throw $_
+}
 
 #Completion
 $CompletionText = ("Script completed in {0}" -f (New-TimeSpan -Start $StartTime -End (Get-Date)).ToString("dd' days 'hh' hours 'mm' minutes 'ss' seconds'"))
